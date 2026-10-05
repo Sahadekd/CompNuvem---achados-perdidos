@@ -1,251 +1,181 @@
 # Achados & Perdidos
 
-Aplicação web para gerenciamento de itens achados e perdidos, desenvolvida com Flask e PostgreSQL e executada em containers Docker por meio do Docker Compose.
+Aplicação web para cadastro e consulta de objetos perdidos, desenvolvida para a atividade de Computação em Nuvem.
 
-## 1. Arquitetura
+O projeto utiliza Flask, Gunicorn, PostgreSQL, Docker Compose, Nginx, volumes persistentes, rede interna, variáveis de ambiente e contêineres Docker.
 
-A aplicação é composta por dois containers:
+---
 
-* **web**: aplicação Flask executada com Gunicorn.
-* **db**: banco de dados PostgreSQL 16 Alpine.
+## 1. Objetivo
 
-Os containers se comunicam pela rede Docker `rede_interna`. O serviço web acessa o banco utilizando o hostname `db`.
+O sistema permite:
 
-A aplicação utiliza dois volumes nomeados:
+- cadastrar objetos encontrados;
+- informar a descrição e o local onde o objeto foi encontrado;
+- cadastrar uma foto opcional;
+- consultar os objetos cadastrados;
+- filtrar objetos por local;
+- consultar estatísticas;
+- acessar as fotos armazenadas.
 
-* `dados_banco`: armazena os dados do PostgreSQL.
-* `fotos`: armazena as fotos enviadas para a aplicação.
+A aplicação é executada em contêineres Docker e utiliza o PostgreSQL para armazenamento dos dados.
 
-O acesso à aplicação é feito pela porta `8080` do computador, encaminhada para a porta `5000` do container web.
+---
 
-## 2. Estrutura do projeto
+## 2. Arquitetura
 
-```text
-achados-perdidos/
-├── app/
-│   ├── app.py
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── .dockerignore
-├── db/
-│   └── init.sql
-├── docs/
-│   └── evidencias/
-├── docker-compose.yml
-├── .env
-├── .env.example
-├── .gitignore
-└── README.md
-```
+A aplicação possui os seguintes componentes:
 
-O arquivo `.env` contém as credenciais utilizadas pelos containers e não deve ser versionado.
+- **Nginx:** proxy reverso e única porta publicada no host;
+- **Flask + Gunicorn:** aplicação web;
+- **PostgreSQL 16:** banco de dados;
+- **Adminer:** painel opcional para administração do banco;
+- **Volume `dados_banco`:** persistência dos dados do PostgreSQL;
+- **Volume `fotos`:** persistência das fotos enviadas;
+- **Rede `rede_interna`:** comunicação entre os contêineres;
+- **`db/init.sql`:** criação e inicialização da tabela `itens`.
 
-## 3. Configuração
+Fluxo principal:
 
-Copie o arquivo de exemplo:
+                    HOST / WINDOWS
+                         |
+                    HTTP :8080
+                         |
+                         v
+              +---------------------+
+              |    Nginx :80        |
+              |   Proxy Reverso     |
+              +----------+----------+
+                         |
+                    rede_interna
+                         |
+                         v
+              +---------------------+
+              | Flask + Gunicorn    |
+              |      :5000          |
+              +----------+----------+
+                         |
+                  +------+------+
+                  |             |
+                  v             v
+           PostgreSQL       Volume fotos
+             :5432          /app/uploads
+                  |
+                  v
+           Volume dados_banco
+        /var/lib/postgresql/data
+---
 
-```powershell
-Copy-Item .env.example .env
-```
+### 3. Pré-requisitos
+Para executar o projeto, é necessário possuir:
 
-Depois, confira os valores do arquivo `.env` e, se necessário, altere as credenciais.
+- **Docker Desktop**;
+- **Docker Compose**;
+Git, caso o projeto seja clonado do GitHub.
 
-Exemplo de estrutura:
+### 4. Configuração
+- Após clonar o projeto, crie o arquivo .env a partir do arquivo de exemplo:
+- Copy-Item .env.example .env
+- Depois, configure no arquivo .env os valores das credenciais do PostgreSQL.
 
-```text
-POSTGRES_DB=achados
-POSTGRES_USER=usuario_exemplo
-POSTGRES_PASSWORD=senha_exemplo
+O arquivo .env não deve ser enviado ao GitHub.
 
-DB_HOST=db
-DB_PORT=5432
-DB_NAME=achados
-DB_USER=usuario_exemplo
-DB_PASSWORD=senha_exemplo
-UPLOAD_DIR=/app/uploads
-```
-
-O arquivo `.env` está incluído no `.gitignore` para evitar que as credenciais sejam versionadas.
-
-## 4. Executando o projeto
-
+### 5. Executar o projeto
 Na pasta raiz do projeto, execute:
 
-```powershell
-docker compose up -d --build
-```
+- **docker compose up -d --build**;
 
-O comando cria as imagens, inicia os containers e configura a rede e os volumes necessários.
+Para verificar os contêineres:
 
-Para verificar o estado dos containers:
+- **docker compose ps**;
 
-```powershell
-docker compose ps
-```
+O banco de dados deve aparecer com o status healthy.
 
-O esperado é que os serviços `db` e `web` estejam em execução, com o banco apresentando o status `healthy`.
+### 6. Testar a aplicação
+Health Check
+Para verificar se a aplicação está funcionando e se existe conexão com o banco:
 
-## 5. Testando a aplicação
+- **curl.exe http://localhost:8080/health**;
 
-### Health check
+Deve retornar informações indicando que a aplicação está funcionando e que o banco está conectado.
 
-```powershell
-curl.exe http://localhost:8080/health
-```
+Listar itens
+- **curl.exe http://localhost:8080/itens**;
 
-Resposta esperada:
+Filtrar por local
+- **curl.exe "http://localhost:8080/itens?local=biblio"**;
 
-```json
-{
-  "banco": "conectado",
-  "container": "ID_DO_CONTAINER",
-  "status": "ok"
-}
-```
+Cadastrar item com foto
+- **curl.exe -F "descricao=Oculos de grau" -F "local=Bloco B" -F "foto=@oculos.jpg" http://localhost:8080/itens**;
 
-### Listar itens
+Consultar estatísticas
+- **curl.exe http://localhost:8080/estatisticas**;
 
-```powershell
-curl.exe http://localhost:8080/itens
-```
+Consultar uma foto
+- **curl.exe http://localhost:8080/itens http://localhost:8080/fotos/<nome-da-foto>**;
 
-A aplicação retorna os itens cadastrados no banco.
+### 7. Rotas da API
+- Método	Rota	Função
+- GET	/health	Verifica a aplicação e o banco
+- GET	/itens	Lista os objetos cadastrados
+- GET	/itens?local=biblio	Filtra os objetos por local
+- POST	/itens	Cadastra um objeto e, opcionalmente, uma foto
+- GET	/fotos/<nome>	Retorna uma foto armazenada
+- GET	/estatisticas	Exibe estatísticas da aplicação
 
-### Filtrar por local
-
-```powershell
-curl.exe "http://localhost:8080/itens?local=biblio"
-```
-
-O filtro utiliza o local informado para pesquisar os itens cadastrados.
-
-### Cadastrar item
-
-Exemplo utilizando um arquivo de imagem:
-
-```powershell
-curl.exe -F "descricao=Oculos de grau" -F "local=Bloco B" -F "foto=@oculos.jpg" http://localhost:8080/itens
-```
-
-A aplicação retorna o ID criado e o nome gerado para a foto.
-
-### Estatísticas
-
-```powershell
-curl.exe http://localhost:8080/estatisticas
-```
-
-A resposta apresenta a quantidade de itens no banco e a quantidade de fotos armazenadas no volume.
-
-### Acessar uma foto
-
-Após cadastrar um item com foto, utilize o nome retornado pela API:
-
-```text
-http://localhost:8080/fotos/NOME_DA_FOTO.jpg
-```
-
-## 6. Persistência dos dados
-
-Os dados são armazenados em volumes Docker nomeados.
-
-Para verificar os volumes:
-
-```powershell
-docker volume ls
-```
-
-Devem existir volumes semelhantes a:
-
-```text
-achados-perdidos_dados_banco
-achados-perdidos_fotos
-```
+### 8. Persistência
+Os dados são armazenados em volumes Docker:
+- **dados_banco: /var/lib/postgresql/data**;
+- **fotos: /app/uploads.**;
 
 Para testar a persistência:
+- **docker compose down**;
+- **docker compose up -d**;
 
-```powershell
-docker compose down
-```
+Os itens e fotos continuam disponíveis após a recriação dos contêineres.
 
-Depois:
+Para remover também os volumes:
+- **docker compose down -v**;
 
-```powershell
-docker compose up -d
-```
+Atenção: o comando down -v remove os dados persistidos nos volumes.
 
-Os itens cadastrados e as fotos continuam disponíveis, pois os volumes não são removidos pelo comando `docker compose down`.
-
-## 7. Verificação do usuário do container
-
-A aplicação web é executada com um usuário não-root.
-
-Para verificar:
-
-```powershell
-docker compose exec web whoami
-```
+### 9. Verificações
+Verificar usuário da aplicação
+- **docker compose exec web whoami**;
 
 Resultado esperado:
+- **appuser**;
 
-```text
-appuser
-```
+Verificar volumes
+- **docker volume ls**;
 
-## 8. Logs
+Verificar rede
+- **docker network inspect achados-perdidos_rede_interna**;
 
-Para visualizar os logs da aplicação web:
+### 10. Adminer
+O Adminer é opcional e utiliza o profile debug.
 
-```powershell
-docker compose logs web --tail 20
-```
+Para iniciar:
+- **docker compose --profile debug up -d**;
 
-Para visualizar os logs do banco:
+Acesse:
+- **http://localhost:8081**;
 
-```powershell
-docker compose logs db --tail 20
-```
+Para conectar ao banco, utilize:
+- **Servidor: db**;
 
-## 9. Parando o projeto
+As demais credenciais devem ser preenchidas conforme os valores configurados no arquivo .env.
 
-Para parar e remover os containers e a rede:
+### 11. Backup
+Foi realizado um backup do volume de fotos em:
+- **docs/backup/fotos-backup.tar.gz**;
 
-```powershell
-docker compose down
-```
+Também foi testada a restauração do backup em um volume separado.
 
-Os volumes não são removidos nesse comando.
+### 12. Documentação
+Os demais detalhes da atividade estão disponíveis em:
 
-Para remover também os volumes, utilize:
-
-```powershell
-docker compose down -v
-```
-
-**Atenção:** esse último comando remove os volumes e, consequentemente, os dados armazenados neles.
-
-## 10. Tecnologias utilizadas
-
-* Python 3.12
-* Flask 3.0.3
-* Gunicorn 23.0.0
-* PostgreSQL 16 Alpine
-* Psycopg 3.2.3
-* Docker
-* Docker Compose
-
-## 11. Requisitos atendidos
-
-* Inicialização da aplicação com Docker Compose.
-* Aplicação Flask executada em container.
-* PostgreSQL executado em container.
-* Comunicação entre containers por rede Docker interna.
-* Persistência do banco de dados utilizando volume nomeado.
-* Persistência das fotos utilizando volume nomeado.
-* Health check do PostgreSQL.
-* Inicialização do serviço web somente após o banco estar saudável.
-* Execução da aplicação web com usuário não-root.
-* Credenciais configuradas por meio do arquivo `.env`.
-* API para consulta, filtro e cadastro de itens.
-* Upload e disponibilização de fotos.
-* Endpoint de estatísticas.
+docs/
+├── RELATORIO.md
+├── REFLEXAO.md
+└── evidencias/
